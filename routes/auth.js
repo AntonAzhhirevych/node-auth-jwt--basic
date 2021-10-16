@@ -1,5 +1,8 @@
 const router = require('express').Router();
 const User = require('../models/User');
+const RefreshToken = require('../models/RefreshToken');
+const config = require("../configs/auth.config");
+
 const { userSignup, userSignin } = require('../schemas/user');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -46,8 +49,52 @@ router.post('/signin', async (req, res) => {
   if (!validPass) return res.status(400).send('Invalid password!');
 
   //create and assign(назначать) token
-  const token = jwt.sign({ _id: user._id }, process.env.TOKEN_SECRET);
-  res.header('auth-token', token).send(token);
+
+  let accessToken = jwt.sign({ _id: user._id }, process.env.TOKEN_SECRET, {
+    expiresIn: config.jwtExpiration,
+  });
+  const refreshToken = await RefreshToken.createToken(user);
+
+  res.header('auth-token', accessToken).send({ accessToken: accessToken, refreshToken: refreshToken });
 });
+
+
+
+router.post('/update-token', async (req, res) => {
+  const { refreshToken: requestToken } = req.body;
+
+  if (requestToken == null) {
+    return res.status(403).json({ message: "Refresh Token is required!" });
+  }
+
+  try {
+    let refreshToken = await RefreshToken.findOne({ token: requestToken });
+
+    if (!refreshToken) {
+      res.status(403).json({ message: "Refresh token is not in database!" });
+      return;
+    }
+
+    if (RefreshToken.verifyExpiration(refreshToken)) {
+      RefreshToken.findByIdAndRemove(refreshToken._id, { useFindAndModify: false }).exec();
+
+      res.status(403).json({
+        message: "Refresh token was expired. Please make a new signin request",
+      });
+      return;
+    }
+
+    let newAccessToken = jwt.sign({ _id: refreshToken.user._id }, process.env.TOKEN_SECRET, {
+      expiresIn: config.jwtExpiration,
+    });
+
+    return res.status(200).json({
+      accessToken: newAccessToken,
+      refreshToken: refreshToken.token,
+    });
+  } catch (err) {
+    return res.status(500).send({ message: err });
+  }
+})
 
 module.exports = router;

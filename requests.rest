@@ -1,0 +1,11 @@
+GET http://localhost:4000/api/posts
+
+
+###
+
+Send Request
+POST http://localhost:4000/api/user/signin
+POST http://localhost:4000/api/user/signup
+
+
+
